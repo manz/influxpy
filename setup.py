@@ -3,7 +3,7 @@ import os
 import re
 from codecs import open
 
-from setuptools import setup, find_packages
+from setuptools import setup
 
 this_dir = os.path.abspath(os.path.dirname(__file__))
 
@@ -69,7 +69,7 @@ setup(
     # for example:
     # $ pip install -e .[dev,test]
     extras_require={
-        'dev': ['check-manifest'],
+        'docs': ['sphinx', 'sphinx_rtd_theme'],
         'test': ['coverage'],
     },
 )
