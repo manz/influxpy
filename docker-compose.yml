@@ -1,0 +1,23 @@
+version: '2'
+services:
+  influxdb:
+    build: databases/influxdb
+    ports:
+      - "8086"
+    environment:
+      - ADMIN_USER=influx
+      - INFLUXDB_INIT_PWD=nopass
+
+  testinfluxpy:
+    build: .
+    environment:
+#      - INFLUXDB_USER=influx
+#      - INFLUXDB_PASSWORD=influx
+#      - INFLUXDB_HOST=influxdb
+#      - INFLUXDB_DBNAME=quota
+      - INFLUXDB_URL=influxdb://influx:influx@influxdb/quota
+    volumes:
+      - ".:/usr/src/app"
+    depends_on:
+      - influxdb
+    command: python -m unittest discover tests
