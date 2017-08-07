@@ -50,8 +50,7 @@ class InfluxCompiler(object):
 
     def compile_where(self, query):
         filters = []
-        print(query.filters)
-        print(query.filters.items())
+        
         for f, value in query.filters.items():
             lookup = None
             field_name = None

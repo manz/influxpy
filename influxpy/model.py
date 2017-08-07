@@ -122,7 +122,7 @@ class InfluxMeasurement(metaclass=InfluxMeasurementBase):
         }]
 
         client = client_wrapper.get_client()
-        print(data)
+
         client.write_points(data)
 
 

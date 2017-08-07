@@ -112,7 +112,7 @@ class InfluxQuerySet(object):
         :return: Dict[str, Dict[str, int or float]]
         """
         series = self._fetch_results()
-        print(series)
+
         results = {}
         for serie in series:
             field_index = serie['columns'].index(primary_field)
