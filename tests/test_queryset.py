@@ -22,4 +22,4 @@ class QuerySetTest(TestCase):
 
         self.assertEqual(
             qs.iql_query(),
-            "SELECT * FROM cpu WHERE organization = '7' AND project = '9' GROUP BY time(1d), organization, project")
+            "SELECT * FROM cpu WHERE \"organization\" = '7' AND \"project\" = '9' GROUP BY time(1d), \"organization\", \"project\"")

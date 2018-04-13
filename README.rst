@@ -5,7 +5,6 @@ Influxpy is a library  designed to avoid writing raw influx queries.
 It's design and functionality are heavily inspired by Django models.
 
 
-
 Installation
 ============
 
@@ -40,10 +39,14 @@ Model Definition
 
     from influxpy import models, fields
 
-    class MyMeasurement(models.InfluxMeasurement):
-        measurement = 'hey'
+    class ServerMeasurement(models.InfluxMeasurement):
+        measurement = 'servers'
+        cpu = fields.InfluxField()
+        memory = fields.InfluxField()
+        free_memory = fields.InfluxField()
 
-        my_tag = fields.InfluxTag()
+        name = fields.InfluxTag()
+        region = fields.InfluxTag()
         optional_tag = fields.InfluxTag(null=True)
 
 
@@ -52,24 +55,46 @@ Save data points
 
 .. code-block:: python
 
-    data_point = MyMeasurement(my_tag='huit', time=datetime.datetime(2017, 12, 12, 9, 45))
+    data_point = ServerMeasurement(cpu=34,
+                                   memory=8192,
+                                   free_memory=6542,
+                                   name='i-3a99f2b',
+                                   region='us-east-1',
+                                   time=datetime.datetime(2017, 12, 12, 9, 45))
     data_point.save()
 
 Queries
 +++++++
 
+To get Mean cpu between 12th december 2017 (>= 9:45 to < 9:50)  by 5 minutes slices.
+
 .. code-block:: python
 
-    qs = MyMeasurement.series.filter(
-        my_tag='huit',
-        time__between=(
-            datetime.datetime(2017, 12, 11, 9, 45),
-            datetime.datetime(2017, 12, 13, 9, 45)))
+    from influxpy.aggregates import Mean
+    from .measurements import ServerMeasurement
+
+    if __name__=='__main__':
+       qs = ServerMeasurement.series.filter(
+    name='i-3a99f2b',
+    time__gte=datetime(2017, 12, 12, 9, 45),
+    time__lt=datetime(2017, 12, 12, 9, 50))
+        
+    qs = qs.annotate(cpu_m=Mean('cpu'))
+    qs = qs.resolution(Minute(5))
+    qs = qs.group_by('name')
 
     results = list(qs)
 
-    print(results)
-
 Would execute the following query:
 
-`SELECT * FROM hey WHERE my_tag='huit' AND time >= {} AND time <= {}`
+.. code-block:: none
+
+    SELECT mean(cpu_percent) AS "cpu_m" FROM server WHERE "name" = 'i-3a99f2b' AND "time" >= '2017-12-12T09:45:00Z' AND "time" < '2017-12-12T09:50:00Z' GROUP BY time(5m)
+
+And have the follwing results
+
+.. code-block:: none
+
+    [
+        InfluxResult(points=[{'time': '2017-12-12T09:45:00Z', 'cpu_m':103}])
+    ]

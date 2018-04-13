@@ -1,11 +1,19 @@
 import copy
-from collections import OrderedDict
-from typing import Dict
+from collections import OrderedDict, namedtuple
+from typing import Dict, List
+
+from influxdb.resultset import ResultSet
 
 from influxpy.client import client_wrapper
 from influxpy.compiler import InfluxCompiler
 from influxpy.aggregates import BaseAggregate
+from influxpy.fields import BaseDuration
 from influxpy.query import InfluxQuery
+
+
+class InfluxSeries(namedtuple('InfluxResult', ['points', 'tags'])):
+    def __eq__(self, other: 'InfluxSeries'):
+        return self.points == other.points and self.tags == other.tags
 
 
 class InfluxQuerySet(object):
@@ -16,21 +24,37 @@ class InfluxQuerySet(object):
         self.compiler = None  # type: InfluxCompiler
         self.model = None
 
-    def _fetch_results(self):
+    def _fetch_results(self):  # -> List[InfluxResult]:
         influx_query = self.compiler.compile(self.query)
-        client = client_wrapper.get_client()
-        result_set = client.query(influx_query, database='quota')
-        raw = result_set.raw
-        return raw.get('series', [])
+        result_set = client_wrapper.query(influx_query)  # type: ResultSet
+        results = []
+        series = result_set.raw.get('series', [])
+        for serie in series:
+
+            columns = serie['columns']
+            tags = serie.get('tags')
+            points = []
+            for value in serie['values']:
+                point = {}
+                for col_index, col in enumerate(columns):
+                    point[col] = value[col_index]
+                points.append(point)
+
+            yield InfluxSeries(points=points, tags=tags)
 
     def __iter__(self):
         return iter(self._fetch_results())
 
-    def iql_query(self):
+    def iql_query(self) -> str:
         """Returns the Influx query"""
         return self.compiler.compile(self.query)
 
-    def filter(self, **kwargs):
+    def using(self, database_alias: str) -> 'InfluxQuerySet':
+        clone = self.clone()
+        clone.query.database = database_alias
+        return clone
+
+    def filter(self, **kwargs) -> 'InfluxQuerySet':
         """
         Return a new QuerySet instance with the args ANDed to the existing
         set.
@@ -40,7 +64,15 @@ class InfluxQuerySet(object):
         clone.query.filters.update(ordered_kwargs)
         return clone
 
-    def group_by(self, *args: str):
+    def all(self) -> 'InfluxQuerySet':
+        """
+        Returns an unfiltered
+        :return:
+        """
+        clone = self.clone()
+        return clone
+
+    def group_by(self, *args: str) -> 'InfluxQuerySet':
         """
         Returns a query set with additional group bys.
         :param args:
@@ -50,7 +82,7 @@ class InfluxQuerySet(object):
         clone.query.group_by = clone.query.group_by + list(args)
         return clone
 
-    def into(self, destination: str):
+    def into(self, destination) -> 'InfluxQuerySet':
         """
 
         :param destination:
@@ -60,7 +92,7 @@ class InfluxQuerySet(object):
         clone.query.destination = destination
         return clone
 
-    def resolution(self, resolution):
+    def resolution(self, resolution: BaseDuration) -> 'InfluxQuerySet':
         """
         Returns a query set with time group by set to resolution.
         :param resolution:
@@ -70,7 +102,7 @@ class InfluxQuerySet(object):
         clone.query.resolution = resolution
         return clone
 
-    def fill(self, value: int):
+    def fill(self, value) -> 'InfluxQuerySet':
         """
         Return a query set where time frames with no data will be filled with value.
         :param value:
@@ -79,7 +111,7 @@ class InfluxQuerySet(object):
         clone.query.fill = value
         return clone
 
-    def annotate(self, *args: BaseAggregate, **kwargs: BaseAggregate):
+    def annotate(self, *args: BaseAggregate, **kwargs: BaseAggregate) -> 'InfluxQuerySet':
         """
         Return a query set in which the returned objects have been annotated
         with extra data or aggregations.
@@ -94,7 +126,7 @@ class InfluxQuerySet(object):
 
         return clone
 
-    def use_downsampled(self):
+    def use_downsampled(self) -> 'InfluxQuerySet':
         """
         Returns a query set but can use downsampled tables
         :return:
@@ -103,27 +135,7 @@ class InfluxQuerySet(object):
         clone.query.can_use_aggregated_measurement = True
         return clone
 
-    # FIXME: move this out. This is too specific to be part of the QuerySet Api
-    def dict_values(self, primary_tag, primary_field) -> Dict[str, Dict[str, int or float]]:
-        """
-        Fetches the resultSet from influx but returns a dictionary where keys are primary_tag value and values are dicts
-        :param primary_tag: str
-        :param primary_field: str
-        :return: Dict[str, Dict[str, int or float]]
-        """
-        series = self._fetch_results()
-
-        results = {}
-        for serie in series:
-            field_index = serie['columns'].index(primary_field)
-            time_index = serie['columns'].index('time')
-            serie_results = {}
-            for value in serie['values']:
-                serie_results[value[time_index]] = value[field_index]
-            results[serie['tags'][primary_tag]] = serie_results
-        return results
-
-    def clone(self):
+    def clone(self) -> 'InfluxQuerySet':
         clone = InfluxQuerySet()
         clone.query = copy.deepcopy(self.query)
         clone.model = self.model

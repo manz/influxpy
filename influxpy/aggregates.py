@@ -1,11 +1,15 @@
 class BaseAggregate(object):
+    """Base class for aggregates"""
+
     def __init__(self):
         self.name = None
 
     def as_iql_part(self) -> str:
+
         pass
 
-    def as_iql(self):
+    def as_iql(self) -> str:
+
         parts = [
             self.as_iql_part()
         ]

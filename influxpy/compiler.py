@@ -1,20 +1,22 @@
+from typing import List
+
 from influxpy.fields import BaseDuration
+from influxpy.query import InfluxQuery
 
 
 class InfluxCompiler(object):
-    def __init__(self, model) -> None:
+    def __init__(self, model):
         super().__init__()
         self.model = model
 
     def get_table_for_time(self, query):
-        if query.destination is None:
-            if query.can_use_aggregated_measurement:
-                mapping = getattr(self.model._meta, 'aggregated_measurements', {})
-                return mapping.get(query.resolution, self.model.measurement)
+        if query.can_use_aggregated_measurement:
+            mapping = getattr(self.model._meta, 'aggregated_measurements', {})
+            return mapping.get(query.resolution, self.model.measurement)
 
         return self.model.measurement
 
-    def compile_group_by(self, query):
+    def compile_group_by(self, query: InfluxQuery) -> List[str]:
         parts = []
 
         if query.resolution:
@@ -26,11 +28,11 @@ class InfluxCompiler(object):
             parts.append('time({resolution})'.format(resolution=value))
 
         if query.group_by:
-            parts = parts + query.group_by
+            parts = parts + ['"' + group + '"' for group in query.group_by]
 
         return parts
 
-    def compile_selected_fields(self, query):
+    def compile_selected_fields(self, query: InfluxQuery) -> List[str]:
         parts = []
         if query.annotations:
             for annotation in query.annotations:
@@ -38,24 +40,20 @@ class InfluxCompiler(object):
         return parts
 
     @staticmethod
-    def quote(value):
+    def quote(value: str) -> str:
         if type(value) == str:
             return '"{value}"'.format(value=value)
         else:
             return str(value)
 
     @staticmethod
-    def single_quote(value):
+    def single_quote(value: str) -> str:
         return "'{value}'".format(value=value)
 
-    def compile_where(self, query):
+    def compile_where(self, query: InfluxQuery) -> str:
         filters = []
-        
-        for f, value in query.filters.items():
-            lookup = None
-            field_name = None
-            field = None
 
+        for f, value in query.filters.items():
             if '__' in f:
                 field_name, lookup_key = f.split('__')
             else:
@@ -73,7 +71,7 @@ class InfluxCompiler(object):
 
         return ' AND '.join(filters)
 
-    def get_query_parts(self, query):
+    def get_query_parts(self, query: InfluxQuery) -> List[str]:
         selected_fields = self.compile_selected_fields(query)
         where = self.compile_where(query)
         group_by = self.compile_group_by(query)
@@ -107,5 +105,5 @@ class InfluxCompiler(object):
                 parts.append('fill({})'.format(str(fill)))
         return parts
 
-    def compile(self, query):
+    def compile(self, query: InfluxQuery) -> str:
         return ' '.join(self.get_query_parts(query))

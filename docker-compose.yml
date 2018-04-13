@@ -11,10 +11,6 @@ services:
   testinfluxpy:
     build: .
     environment:
-#      - INFLUXDB_USER=influx
-#      - INFLUXDB_PASSWORD=influx
-#      - INFLUXDB_HOST=influxdb
-#      - INFLUXDB_DBNAME=quota
       - INFLUXDB_URL=influxdb://influx:influx@influxdb/quota
     volumes:
       - ".:/usr/src/app"

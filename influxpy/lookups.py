@@ -12,8 +12,8 @@ class Lookup(object):
 class BuiltinLookup(Lookup):
     operator = None
 
-    def as_iql(self, rhs):  # , compiler, rhs):
-        lhs_iql = self.field.name
+    def as_iql(self, rhs) -> str:
+        lhs_iql = '"%s"' % self.field.name
         rhs_iql = "'%s'" % self.field.db_value(rhs)
         return '%s %s %s' % (lhs_iql, self.operator, rhs_iql)
 

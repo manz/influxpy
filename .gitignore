@@ -1,3 +1,7 @@
-
+dist
+build
+influxpy.egg-info
 /docs/_build/
 /docs/VE_docs/
+.idea
+__pycache__

@@ -1,8 +1,23 @@
 import copy
+from datetime import timedelta
 from unittest.case import TestCase
 
+import datetime
+
 from influxpy.aggregates import Sum
+from influxpy.fields import InfluxField, InfluxTag, Days
+from influxpy.model import InfluxMeasurement
 from influxpy.query import InfluxQuery
+
+
+class RealtimeCounter(InfluxMeasurement):
+    measurement = 'counter'
+
+    counter = InfluxField()
+    organization = InfluxTag()
+    project = InfluxTag()
+    product = InfluxTag()
+    kind = InfluxTag()
 
 
 class QueryTest(TestCase):
@@ -26,3 +41,9 @@ class QueryTest(TestCase):
 
         self.assertEqual(query.annotations, [])
         self.assertEqual(query_copy.annotations, [Sum('counter')])
+
+    def test_query(self):
+        qs = RealtimeCounter.series.filter(product='STORES',
+                                           time__between=(datetime.datetime(2017, 8, 1),
+                                                          datetime.datetime(2017, 8, 1) + timedelta(days=30)))
+        qs = qs.annotate(Sum('counter')).group_by('product').resolution(Days(30))

@@ -3,6 +3,10 @@ import logging
 
 import functools
 
+import datetime
+
+logger = logging.getLogger()
+
 
 class InfluxBaseField(object):
     def __init__(self, default=None, null=False):
@@ -36,9 +40,6 @@ class InfluxField(InfluxBaseField):
     def contribute_to_class(self, cls, name):
         super().contribute_to_class(cls, name)
         cls._meta.add_field(self)
-
-
-logger = logging.getLogger()
 
 
 class InfluxLookupField(InfluxBaseField):
@@ -91,12 +92,18 @@ class InfluxTag(InfluxLookupField):
 class InfluxTimeField(InfluxLookupField):
     RFC3339 = '%Y-%m-%dT%H:%M:%S'
 
-    def db_value(self, value):
+    def db_value(self, value: datetime.datetime) -> str:
+        """
+        Transforms a datetime into a RFC3339 datetime string.
+        :param value: the datetime to transform
+        :return: the RFC3339 string version of value.
+        """
         return value.strftime(self.RFC3339) + "Z"
 
     def contribute_to_class(self, cls, name):
         super().contribute_to_class(cls, name)
         cls._meta.set_time(self)
+
 
 class BaseDuration(object):
     unit = None
@@ -110,7 +117,7 @@ class BaseDuration(object):
         except ValueError:
             raise ValueError('Durations must be integers.')
 
-    def __eq__(self, o) -> bool:
+    def __eq__(self, o: 'BaseDuration') -> bool:
         return self.value == o.value
 
     def __hash__(self) -> int:

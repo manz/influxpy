@@ -25,6 +25,7 @@ def find_version(*file_paths):
     raise RuntimeError("Unable to find version string.")
 
 
+# Get the requirements from requirements.txt
 with open(os.path.join(this_dir, 'requirements.txt'), encoding='utf-8') as f:
     requirements = f.read().splitlines()
 

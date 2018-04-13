@@ -1,46 +1,11 @@
 from datetime import datetime, timedelta
-from unittest.case import TestCase
 
-from influxpy.client import client_wrapper
 from influxpy.model import InfluxMeasurement, ContinuousQuery
 from influxpy.fields import InfluxField, InfluxTag, Hours, Days, Minutes
 from influxpy.aggregates import Raw, Sum, Mean
+from influxpy.queryset import InfluxSeries
+from tests import InfluxTestCase
 
-
-# def build_results(series):
-#     results = None
-#
-#     results = {}
-#     for serie in series:
-#         res = {}
-#         for value in serie['values']:
-#             point = {}
-#             for index, field in enumerate(value):
-#                 field_name = serie['columns'][index]
-#                 point[field_name] = field
-#             res[point['time']] = point['my_SuM']
-#
-#             # try:
-#             tags_values = list(serie['tags'].values())
-#             results[tags_values[0]] = res
-#             # except (KeyError, IndexError):
-#             #     results = res
-#     return results
-
-
-# def transform_results(series, primary_tag, primary_field):
-#     if series:
-#         results = {}
-#         for serie in series:
-#             field_index = serie['columns'].index(primary_field)
-#             time_index = serie['columns'].index('time')
-#             serie_results = {}
-#             for value in serie['values']:
-#                 serie_results[value[time_index]] = value[field_index]
-#             results[serie['tags'][primary_tag]] = serie_results
-#         return results
-#     else:
-#         return None
 
 class CounterMeasurement(InfluxMeasurement):
     measurement = 'counter'
@@ -59,15 +24,81 @@ class CounterMeasurement(InfluxMeasurement):
         }
 
 
-class InfluxTestCase(TestCase):
-    def beforeAll(self):
-        client = client_wrapper.client
-        # client.get
+class ServerMeasurement(InfluxMeasurement):
+    measurement = 'server'
+
+    cpu_percent = InfluxField()
+    memory_free = InfluxField()
+    memory_used = InfluxField()
+    memory_total = InfluxField()
+    region = InfluxTag()
+    name = InfluxTag()
 
 
-class ModelTest(TestCase):
-    def setUp(self):
-        client_wrapper.get_client().query('DROP SERIES FROM counter')
+class ModelTest(InfluxTestCase):
+    def test_server_model(self):
+        pivot = datetime(2017, 12, 12, 8, 57, 22)
+
+        ServerMeasurement(
+            cpu_percent=13,
+            memory_free=128,
+            memory_used=200,
+            memory_total=512,
+
+            region='us-east-1',
+            name='i-12345678',
+
+            time=pivot
+        ).save()
+
+        ServerMeasurement(
+            cpu_percent=50,
+            memory_free=0,
+            memory_used=512,
+            memory_total=512,
+
+            region='us-east-1',
+            name='i-12345678',
+            time=pivot + timedelta(minutes=1)
+        ).save()
+
+        ServerMeasurement(
+            cpu_percent=70,
+            memory_free=2048,
+            memory_used=2048,
+            memory_total=4096,
+
+            region='eu-west-1',
+            name='i-87654321',
+            time=pivot
+        ).save()
+
+        qs = ServerMeasurement.series.filter(
+            time__between=(
+                pivot,
+                pivot + timedelta(minutes=1)
+            )).group_by('name')
+
+        qs = qs.annotate(
+            cpu_percent_m=Mean('cpu_percent'),
+            memory_used_m=Mean('memory_used')
+        )
+
+        qs = qs.resolution(Hours(1))
+
+        def order_by_name(series):
+            return sorted(series, key=lambda e: e['tags']['name'])
+
+        results = list(qs)
+        self.assertEqual(results,
+                         [
+                             InfluxSeries(
+                                 points=[{'time': '2017-12-12T08:00:00Z', 'memory_used_m': 356, 'cpu_percent_m': 31.5}],
+                                 tags={'name': 'i-12345678'}),
+                             InfluxSeries(
+                                 points=[{'time': '2017-12-12T08:00:00Z', 'memory_used_m': 2048, 'cpu_percent_m': 70}],
+                                 tags={'name': 'i-87654321'})
+                         ])
 
     def test_model(self):
         pivot = datetime(2017, 12, 12, 8, 57, 22)
@@ -113,36 +144,30 @@ class ModelTest(TestCase):
         qs = qs.annotate(my_SuM=Sum('counter'))
         qs = qs.resolution(Days(1)).fill(0)
 
-        print(qs.iql_query())
 
-        for result_set in qs:
-            print(result_set)
-        # self.assertEqual(qs.iql_query(), "SELECT mean(counter) AS \"my_SuM\" FROM counter WHERE "
+          # self.assertEqual(qs.iql_query(), "SELECT mean(counter) AS \"my_SuM\" FROM counter WHERE "
         #                                  "kind = 'map_load' AND "
         #                                  "time >= '2017-12-02T08:57:22Z' "
         #                                  "AND time <= '2017-12-13T08:57:22Z' "
         #                                  "GROUP BY time(1h), organization, project, kind, product fill(0)")
 
         results = list(qs)
-        print(qs.dict_values('kind', 'my_SuM'))
         self.assertEqual(len(results), 1)
 
         first_result = results[0]
-        self.assertEqual(first_result['columns'], [
-            'time',
-            'my_SuM'
+        self.assertEqual(sorted(list(first_result.points[0].keys())), [
+            'my_SuM',
+            'time'
         ])
 
-        self.assertEqual(first_result['name'], 'counter')
-
-        self.assertEqual(first_result['tags'], {
+        self.assertEqual(dict(first_result.tags), {
             'organization': '2',
             'product': 'STORES',
             'kind': 'map_load',
             'project': '1'
         })
 
-        self.assertEqual(first_result['values'][1], ['2017-12-07T00:00:00Z', 25])
+        self.assertEqual(first_result.points[1], {'time': '2017-12-07T00:00:00Z', 'my_SuM': 25})
 
     def test_continuous_queries(self):
         qs = CounterMeasurement.series.group_by(
@@ -150,7 +175,7 @@ class ModelTest(TestCase):
             'project',
             'kind',
             'product'
-        ).resolution(Days(1)).annotate(counter=Sum('counter')).into('counter_day')
+        ).resolution(Days(1)).annotate(counter=Sum('counter')).into('counter_day').use_downsampled()
 
         cq = ContinuousQuery(queryset=qs,
                              name='cq_counter_day',
@@ -159,7 +184,7 @@ class ModelTest(TestCase):
                              resample_for=Days(2))
         self.assertEqual(
             cq.iql_query(),
-            'CREATE CONTINUOUS QUERY "cq_counter_day" ON influx RESAMPLE EVERY 1h FOR 2d BEGIN SELECT sum(counter) AS "counter" INTO counter_day FROM counter GROUP BY time(1d), organization, project, kind, product END')
+            'CREATE CONTINUOUS QUERY "cq_counter_day" ON influx RESAMPLE EVERY 1h FOR 2d BEGIN SELECT sum(counter) AS "counter" INTO counter_day FROM counter_minute GROUP BY time(1d), "organization", "project", "kind", "product" END')
 
     def test_model_save(self):
         point1 = CounterMeasurement(
@@ -177,5 +202,60 @@ class ModelTest(TestCase):
             kind='kiki',
             product='pouet',
             time=datetime.now())
+
         point2.save()
         point1.save()
+
+    def test_model_multiple_fields(self):
+        pivot = datetime(2017, 12, 12, 8, 57, 22)
+
+        class MultipleFieldsMeasurement(InfluxMeasurement):
+            measurement = "toto"
+            cpu = InfluxField()
+            memory = InfluxField()
+            disk_io = InfluxField()
+
+        MultipleFieldsMeasurement(time=pivot - timedelta(hours=1), cpu=50, memory=750, disk_io=100).save()
+        MultipleFieldsMeasurement(time=pivot, cpu=30, memory=1024, disk_io=25).save()
+        MultipleFieldsMeasurement(time=pivot + timedelta(hours=1), cpu=300, memory=880, disk_io=0).save()
+
+        qs = MultipleFieldsMeasurement.series
+        qs = qs.annotate(cpu_a=Mean('cpu'), memory_a=Mean('memory'), disk_io_a=Mean('disk_io'))
+        qs = qs.fill(0)
+        qs = qs.filter(time__between=(pivot - timedelta(hours=3), pivot + timedelta(hours=3)))
+        qs = qs.resolution(Hours(1))
+
+
+        results = list(qs)
+
+    def test_docs(self):
+        ServerMeasurement(cpu_percent=34,
+                          memory_total=8192,
+                          memory_used=6542,
+                          memory_free=8192 - 6542,
+                          name='i-3a99f2b',
+                          region='us-east-1',
+                          time=datetime(2017, 12, 12, 9, 45)).save()
+        ServerMeasurement(cpu_percent=75,
+                          memory_total=8192,
+                          memory_used=6542,
+                          memory_free=8192 - 6542,
+                          name='i-3a99f2b',
+                          region='us-east-1',
+                          time=datetime(2017, 12, 12, 9, 46)).save()
+        ServerMeasurement(cpu_percent=200,
+                          memory_total=8192,
+                          memory_used=6542,
+                          memory_free=8192 - 6542,
+                          name='i-3a99f2b',
+                          region='us-east-1',
+                          time=datetime(2017, 12, 12, 9, 47)).save()
+
+        qs = ServerMeasurement.series.filter(
+            name='i-3a99f2b',
+            time__gte=datetime(2017, 12, 12, 9, 45),
+            time__lt=datetime(2017, 12, 12, 9, 50))
+
+        qs = qs.annotate(cpu_m=Mean('cpu_percent'))
+        qs = qs.resolution(Minutes(5))
+

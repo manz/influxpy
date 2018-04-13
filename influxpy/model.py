@@ -1,5 +1,6 @@
 import inspect
 
+import copy
 from influxpy.client import client_wrapper
 from influxpy.fields import InfluxBaseField, InfluxTimeField, BaseDuration
 from influxpy.queryset import InfluxQuerySet
@@ -13,12 +14,12 @@ class Options(object):
         self.all_fields = {}
 
         if base_meta:
-            self.tags = base_meta.tags
-            self.fields = base_meta.fields
-            self.all_fields = base_meta.all_fields
+            self.tags = copy.deepcopy(base_meta.tags)
+            self.fields = copy.deepcopy(base_meta.fields)
+            self.all_fields = copy.deepcopy(base_meta.all_fields)
 
         if meta:
-            self.aggregated_measurements = getattr(meta, 'aggregated_measurements')
+            self.aggregated_measurements = copy.deepcopy(getattr(meta, 'aggregated_measurements'))
         else:
             self.aggregated_measurements = {}
 
@@ -121,9 +122,7 @@ class InfluxMeasurement(metaclass=InfluxMeasurementBase):
             'fields': fields
         }]
 
-        client = client_wrapper.get_client()
-
-        client.write_points(data)
+        client = client_wrapper.write_points(data)
 
 
 class ContinuousQuery(object):
@@ -143,7 +142,7 @@ class ContinuousQuery(object):
         self.resample_for = resample_for
         self.source = source
 
-    def iql_query(self):
+    def iql_query(self) -> str:
         parts = [
             'CREATE CONTINUOUS QUERY',
             '"{name}"'.format(name=self.name),
@@ -164,7 +163,6 @@ class ContinuousQuery(object):
         return ' '.join(parts)
 
     def save(self, force=False):
-        client = client_wrapper.get_client()
         if force:
-            client.query('DROP CONTINUOUS QUERY ')
-        client.query(self.iql_query())
+            client_wrapper.query('DROP CONTINUOUS QUERY {name}')
+        client_wrapper.query(self.iql_query())
